@@ -16,10 +16,25 @@ int __attribute((noreturn)) main(void) {
 	GPIOC->CRH &= ~GPIO_CRH_CNF13; //clear cnf bits
 	GPIOC->CRH |= GPIO_CRH_MODE13_0; //Max speed = 10Mhz
 
+    uint32_t period = 2000000;
+
     while (1) {
-	    GPIOC->ODR |= (1U<<13U); //U -- unsigned suffix (to avoid syntax warnings in IDE)
-		delay(1000000);
-	    GPIOC->ODR &= ~(1U<<13U);
-	    delay(1000000);
+        // --- Фаза "ускорение" ---
+        // Уменьшаем period на 200000 каждую итерацию, пока не дойдём до 100000
+        for (period = 2000000; period > 100000; period -= 200000) {
+            GPIOC->ODR |=  (1U << 13U);  // LED выключен
+            delay(period);
+            GPIOC->ODR &= ~(1U << 13U);  // LED горит
+            delay(period);
+        }
+
+        // --- Фаза "замедление" ---
+        // Увеличиваем period обратно
+        for (period = 100000; period < 2000000; period += 200000) {
+            GPIOC->ODR |=  (1U << 13U);
+            delay(period);
+            GPIOC->ODR &= ~(1U << 13U);
+            delay(period);
+        }
     }
 }
