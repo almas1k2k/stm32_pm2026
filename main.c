@@ -6,6 +6,8 @@
 #define LED_PIN         13U  // PC13
 #define BUTTON_UP_PIN    0U  // PA0 - A
 #define BUTTON_DOWN_PIN  1U  // PA1 - C
+#define BUTTON_LEFT_PIN   2U  // PA2
+#define BUTTON_RIGHT_PIN  3U  // PA3
 
 // Границы частоты 
 // delay(1000000) = 1 Гц (полупериод 0.5 сек)
@@ -18,6 +20,8 @@
 static uint32_t blink_delay = DELAY_START;
 static bool A_is_pressed = false;
 static bool C_is_pressed = false;
+static bool D_is_pressed = false;
+static bool B_is_pressed = false;
 
 void delay(uint32_t ticks) {
 	for (int i=0; i<ticks; i++) {
@@ -34,12 +38,13 @@ void led_init(void) {
 void buttons_init(void) {
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
 
-    // PA0 и PA1 — вход с подтяжкой (MODE=00, CNF=10 → 0x8 на каждый пин)
-    GPIOA->CRL &= ~0xFFU;
-    GPIOA->CRL |=  0x88U;
+    // PA0, PA1, PA2, PA3 — вход с подтяжкой (MODE=00, CNF=10 → 0x8 на каждый пин)
+    GPIOA->CRL &= ~0xFFFFU;   // очищаем биты для PA0..PA3
+    GPIOA->CRL |=  0x8888U;   // 0x8 для каждого из четырёх пинов
 
-    // Включаем pull-up: ODR0=1, ODR1=1
-    GPIOA->ODR |= (1U << BUTTON_UP_PIN) | (1U << BUTTON_DOWN_PIN);
+    // Включаем pull-up: ODR0=1, ODR1=1, ODR2=1, ODR3=1
+    GPIOA->ODR |= (1U << BUTTON_UP_PIN) | (1U << BUTTON_DOWN_PIN)
+                | (1U << 2U) | (1U << 3U);
 }
 
 void handle_buttons(void) {
@@ -57,7 +62,7 @@ void handle_buttons(void) {
 		A_is_pressed = false;
 	}
 
-    // PA0 - увеньшаем частоту
+    // PA1 - увеньшаем частоту
     if ((GPIOA->IDR & (1U << BUTTON_DOWN_PIN)) == 0) {
 		if (!C_is_pressed) {	
 			C_is_pressed = true;
@@ -69,6 +74,29 @@ void handle_buttons(void) {
     }
 	else if (C_is_pressed) {
 		C_is_pressed = false;
+	}
+
+
+	// PA2 - минимальная частота
+    if ((GPIOA->IDR & (1U << BUTTON_LEFT_PIN)) == 0) {
+		if (!D_is_pressed) {	
+			D_is_pressed = true;
+			blink_delay = DELAY_MAX;
+		}
+    }
+	else if (D_is_pressed) {
+		D_is_pressed = false;
+	}
+
+	// PA3 - максимальная частота
+    if ((GPIOA->IDR & (1U << BUTTON_RIGHT_PIN)) == 0) {
+		if (!B_is_pressed) {	
+			B_is_pressed = true;
+			blink_delay = DELAY_MIN;
+		}
+    }
+	else if (B_is_pressed) {
+		B_is_pressed = false;
 	}
 }
 
