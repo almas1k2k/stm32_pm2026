@@ -26,6 +26,22 @@ static bool C_is_pressed = false;
 static bool D_is_pressed = false;
 static bool B_is_pressed = false;
 
+volatile uint8_t current_digit = 0;
+
+// Простой шрифт 8x8 для цифр 0-9
+const uint8_t font_digits[10][8] = {
+    {0x3C, 0x42, 0x42, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 0
+    {0x08, 0x18, 0x08, 0x08, 0x08, 0x08, 0x1C, 0x00}, // 1
+    {0x3C, 0x42, 0x04, 0x08, 0x10, 0x20, 0x7E, 0x00}, // 2
+    {0x3C, 0x42, 0x04, 0x18, 0x04, 0x42, 0x3C, 0x00}, // 3
+    {0x08, 0x18, 0x28, 0x48, 0x7E, 0x08, 0x08, 0x00}, // 4
+    {0x7E, 0x40, 0x7C, 0x02, 0x02, 0x42, 0x3C, 0x00}, // 5
+    {0x3C, 0x40, 0x7C, 0x42, 0x42, 0x42, 0x3C, 0x00}, // 6
+    {0x7E, 0x02, 0x04, 0x08, 0x10, 0x10, 0x10, 0x00}, // 7
+    {0x3C, 0x42, 0x42, 0x3C, 0x42, 0x42, 0x3C, 0x00}, // 8
+    {0x3C, 0x42, 0x42, 0x42, 0x3E, 0x02, 0x3C, 0x00}  // 9
+};
+
 // задержка для антидребезга
 void delay_ms(uint32_t ms) {
     for (uint32_t i = 0; i < ms * 1000; i++) {
@@ -112,6 +128,47 @@ void display_init(void) {
     display_cmd(0xAF); 
 }
 
+// ============ отрисовка цифры
+
+void draw_digit(uint8_t digit) {
+    display_cmd(0xB0 + 3); // выбор страницы
+    display_cmd(0x00 | (60 & 0x0F)); 
+    display_cmd(0x10 | (60 >> 4));   
+    
+    for (int i = 0; i < 8; i++) {
+        display_data(font_digits[digit][i]);
+    }
+}
+
+// =========== Таймер
+
+void Timer1_Init(void) {
+    RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
+    
+    // 72MHz / 7200 = 10 000 Гц. 10 000 / 10 000 = 1 Гц (1 секунда)
+    TIM1->PSC = 7199; 
+    TIM1->ARR = 9999; 
+    
+    TIM1->DIER |= TIM_DIER_UIE; // разрешаем прерывание по переполнению
+    TIM1->BDTR |= TIM_BDTR_MOE; 
+    
+    NVIC_EnableIRQ(TIM1_UP_IRQn);
+    
+    TIM1->CR1 |= TIM_CR1_CEN;
+}
+
+// Обработчик прерывания таймера
+void TIM1_UP_IRQHandler(void) {
+    if (TIM1->SR & TIM_SR_UIF) {
+        TIM1->SR &= ~TIM_SR_UIF; // сбрасываем флаг прерывания
+        
+        current_digit++;
+        if (current_digit > 9) current_digit = 0;
+        
+        draw_digit(current_digit); // обновляем цифру на экране
+    }
+}
+
 // ============ отрисовка шахматной доски
 
 void draw_chessboard(void) {
@@ -148,7 +205,6 @@ void buttons_init(void) {
     GPIOB->CRH &= ~0x0000FF00U;
     GPIOB->CRH |=  0x00008800U; 
 
-    // Подтяжка
     GPIOB->ODR |= (1U << BTN_A_PIN) | (1U << BTN_C_PIN) | (1U << BTN_LEFT_PIN) | (1U << BTN_RIGHT_PIN);
 }
 
@@ -157,7 +213,7 @@ void handle_buttons(void) {
     if ((GPIOB->IDR & (1U << BTN_A_PIN)) == 0) {
         if (!A_is_pressed) {
             A_is_pressed = true;
-            delay_ms(20); // Антидребезг
+            delay_ms(20); 
             if (blink_delay > DELAY_MIN) {
                 blink_delay /= 2;
                 if (blink_delay < DELAY_MIN) blink_delay = DELAY_MIN;
@@ -169,7 +225,7 @@ void handle_buttons(void) {
     if ((GPIOB->IDR & (1U << BTN_C_PIN)) == 0) {
         if (!C_is_pressed) {
             C_is_pressed = true;
-            delay_ms(20); // Антидребезг
+            delay_ms(20); 
             if (blink_delay < DELAY_MAX) {
                 blink_delay *= 2;
                 if (blink_delay > DELAY_MAX) blink_delay = DELAY_MAX;
@@ -196,18 +252,20 @@ void handle_buttons(void) {
     } else if (B_is_pressed) B_is_pressed = false;
 }
 
+// ========== main ========
 
 int __attribute((noreturn)) main(void) {
     led_init();
     buttons_init();
     SPI1_Init();
     display_init();
-
-    draw_chessboard(); 
-
+    
+    draw_digit(0); // Выводим начальную цифру 0
+    Timer1_Init(); // Запускаем таймер
+    
     while (1) {
         handle_buttons();
-
+        
         GPIOC->ODR |=  (1U << LED_PIN);  
         delay(blink_delay);
         GPIOC->ODR &= ~(1U << LED_PIN);   
